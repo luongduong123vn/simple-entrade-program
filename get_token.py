@@ -76,10 +76,7 @@ class entrade_api(object):
         data=self.load_pandas()
         return data
 
-run_api = entrade_api()
-price_data=run_api.price_data()
-print(price_data.tail(5))
-price_data.to_csv('price_data.csv', index=False)
-
-exit()
-
+#run_api = entrade_api()
+#price_data=run_api.price_data()
+#print(price_data.tail(5))
+#price_data.to_csv('price_data.csv', index=False)

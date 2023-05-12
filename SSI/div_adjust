@@ -1,0 +1,57 @@
+import json
+import pandas as pd
+import random
+import datetime
+
+from dateutil.relativedelta import relativedelta
+
+import ssi_fc_data.data_utils as du
+import ssi_fc_data.general_utils as gu
+
+from subsystems.LBMOM.subsys import Lbmom
+from brokerage.ssi import ssi
+from brokerage.TradeClient import TradeClient
+import ssi_fc_data.md_client_main as md
+
+with open("C:/Users/luong/Desktop/SSI_API/SSI/config/ssi_config.json", "r") as f:
+    auth_config = json.load(f)
+ssi = ssi(auth_config=auth_config)
+trade_client = ssi.get_trade_client()
+with open("C:/Users/luong/Desktop/SSI_API/SSI/config/vn30.json", "r") as d:
+    instruments = json.load(d)
+div_adjust=pd.read_csv(r"C:/Users/luong/Desktop/SSI_API/SSI/Data/vn30_div.csv")
+df=pd.DataFrame(div_adjust)
+df["date"] = pd.Series(df["date"]).apply(lambda x: trade_client.format_date_ssi(x))
+df["date"] = pd.Series(df["date"]).apply(lambda x: trade_client.format_date_dt(x))
+
+
+#df.to_csv(r"C:/Users/luong/Desktop/SSI_API/SSI/Data/vn30_div.csv", index=False)
+div_dict={key: {"date":[],"share div":[], "cash div":[]} for key in instruments["symbols"]}
+def get_div_dict():
+    for i in df.index:
+        for key in list(div_dict.keys()):
+            if key == df.loc[i,"company name"]:
+                div_dict[key]["date"].append(df.loc[i, "date"])
+                div_dict[key]["share div"].append(float(df.loc[i, "share div"]))
+                div_dict[key]["cash div"].append(float(df.loc[i, "cash div"]))
+
+database_df,instruments=gu.load_file(r"C:/Users/luong/Desktop/SSI_API/SSI/Data/data_new.obj")
+database_df.reset_index(inplace=True)
+database_df["date"]=pd.Series(database_df["date"]).apply(lambda x: trade_client.format_date_dt(x))
+database_df.set_index("date",inplace=True)
+
+def get_div_adj_data():
+    for key in instruments["symbols"]:
+        for i in range(len(div_dict[key]["date"])):
+            div_date = div_dict[key]["date"][i]
+            cash_div = div_dict[key]["cash div"][i]
+            share_div = div_dict[key]["share div"][i]
+            div_date_loc = database_df.index.get_indexer([div_date])
+            div_date_prev = database_df.iloc[div_date_loc[0]-1].name 
+            cash_fact = (database_df.loc[div_date_prev, "{} close".format(key)]-cash_div)/database_df.loc[div_date_prev,"{} close".format(key)]
+            share_fact = 1 + share_div
+            database_df.loc[: div_date_prev,[f"{key} high", f"{key} low", f"{key} close"]] = database_df.loc[: div_date_prev,[f"{key} high", f"{key} low", f"{key} close"]] * cash_fact
+            database_df.loc[: div_date, f"{key} open"] = database_df.loc[: div_date, f"{key} open"] * cash_fact
+            database_df.loc[: div_date_prev,[f"{key} high", f"{key} low", f"{key} close"]] = database_df.loc[: div_date_prev,[f"{key} high", f"{key} low", f"{key} close"]].div(share_fact)
+            database_df.loc[: div_date, f"{key} open"] = database_df.loc[: div_date, f"{key} open"].div(share_fact)
+
